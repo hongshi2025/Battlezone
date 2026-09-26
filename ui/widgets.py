@@ -133,7 +133,7 @@ def draw_gun_preview(model, x, y, w, h, screen_w, screen_h, t, spin=True, yaw=No
     glRotatef(ang, 0, 1, 0)
     center_z = 0.33 - L / 2
     glTranslatef(0, 0, -center_z)
-    for g in ("body", "mag", "bolt", "slide", "pump", "glass"):
+    for g in ("body", "mag", "bolt", "slide", "pump"):
         model.draw(g)
     glDisable(GL_LIGHTING)
     glEnable(GL_BLEND)

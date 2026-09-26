@@ -46,25 +46,22 @@ class CameraRig:
         self.land.step(dt)
 
         ads = smoothstep(visual_ads)
-        # ── 头部晃动 (与真实步伐节奏匹配，温和稳健) ──
+        # ── 头部晃动 ──
         hs = p.hspeed() if (p.on_ground and p.move != M_SLIDE) else 0.0
-        step_len = 2.4 if p.move == M_SPRINT else (1.4 if p.stance == CROUCH else (1.0 if p.stance == PRONE else 1.8))
-        self.bob_phase += (hs / step_len) * (2.0 * math.pi) * dt
+        self.bob_phase += hs * dt * (1.9 if p.stance != PRONE else 1.1)
         if p.move == M_SPRINT:
-            amp_t, lat_t = 0.012, 0.008
+            amp_t, lat_t = 0.045, 0.03
         elif p.stance == PRONE:
-            amp_t, lat_t = 0.004, 0.010
+            amp_t, lat_t = 0.012, 0.035
         elif p.stance == CROUCH:
-            amp_t, lat_t = 0.005, 0.004
+            amp_t, lat_t = 0.014, 0.01
         else:
-            amp_t, lat_t = 0.008, 0.005
-        # 开镜时大幅消除晃动 (保留 4% 呼吸感)
-        k = clamp(hs / S.WALK_SPEED, 0, 1.4) * (1.0 - 0.96 * ads)
+            amp_t, lat_t = 0.022, 0.014
+        k = clamp(hs / S.WALK_SPEED, 0, 1.6) * (1 - 0.85 * ads)
         self.bob_amp += (k - self.bob_amp) * min(1.0, 8 * dt)
-        ph = self.bob_phase
-        # 垂直向晃动按单步周期 (每步一次微小下沉)，水平晃动按左右跨步周期
-        bob_y = math.cos(2 * ph) * amp_t * self.bob_amp
-        bob_x = math.sin(ph) * lat_t * self.bob_amp
+        ph = self.bob_phase * math.pi
+        bob_y = -abs(math.sin(ph)) * amp_t * self.bob_amp + amp_t * 0.5 * self.bob_amp
+        bob_x = math.cos(ph) * lat_t * self.bob_amp
 
         # ── 翻滚角 (侧身 / 滑铲 / 冲刺 / 横移) ──
         roll_t = -p.lean * S.LEAN_ANGLE
@@ -73,22 +70,21 @@ class CameraRig:
         if p.move == M_MANTLE:
             roll_t += 5.0
         if p.move == M_SPRINT:
-            roll_t += math.sin(ph) * 0.45 * (1 - ads)
+            roll_t += math.cos(ph) * 1.2
         # 横向速度造成的轻微侧倾
         rx, rz = math.cos(p.yaw), math.sin(p.yaw)
         lat_v = p.vel[0] * rx + p.vel[2] * rz
         roll_t += -lat_v * 0.25 * (1 - ads)
         self.roll += (roll_t - self.roll) * min(1.0, 10 * dt)
 
-        # ── FOV 缩放 (开镜缩放与瞄准视效严格同步) ──
-        base_fov_dyn = self.base_fov
+        # ── FOV ──
+        fov_t = self.base_fov
         if p.move == M_SPRINT:
-            base_fov_dyn += S.FOV_SPRINT_ADD
+            fov_t += S.FOV_SPRINT_ADD
         elif p.move == M_SLIDE:
-            base_fov_dyn += S.FOV_SLIDE_ADD
-        target_zoom_fov = zoom_fov(self.base_fov, zoom)
-        fov_t = lerp(base_fov_dyn, target_zoom_fov, ads)
-        rate = 26.0 if zoom > 2.5 else 20.0
+            fov_t += S.FOV_SLIDE_ADD
+        fov_t = lerp(fov_t, zoom_fov(self.base_fov, zoom), ads)
+        rate = 18.0 if zoom > 2.5 else S.FOV_LERP_SPEED
         self.fov += (fov_t - self.fov) * min(1.0, rate * dt)
 
         # ── 受击抖动 ──

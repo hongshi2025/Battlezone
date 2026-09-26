@@ -27,46 +27,25 @@ def stat_values(wdef, st):
     }
 
 
-def draw_stats(ui, x, y, w, wdef, atts, preview_atts=None):
+def draw_stats(ui, x, y, w, wdef, atts):
     st = compute_stats(wdef, atts)
     base = compute_stats(wdef, default_attachments(wdef))
-    sv = stat_values(wdef, st)
-    bv = stat_values(wdef, base)
-    pv = stat_values(wdef, compute_stats(wdef, preview_atts)) if preview_atts else None
-    pst = compute_stats(wdef, preview_atts) if preview_atts else None
-
+    sv, bv = stat_values(wdef, st), stat_values(wdef, base)
     for k, (v, txt) in sv.items():
-        if pv is not None:
-            prev_v, prev_txt = pv[k]
-            delta = prev_v - v
-            ui.stat_bar(x, y, w, k, prev_v, delta, prev_txt)
-        else:
-            delta = v - bv[k][0]
-            ui.stat_bar(x, y, w, k, v, delta, txt)
-        y += 38
-
-    ui.label("弹匣容量", x, y, 13, GREY, shadow=False)
-    cur_mag = st.mag_size
-    show_mag = pst.mag_size if pst else cur_mag
-    col = WHITE
-    if pst and show_mag > cur_mag:
-        col = (0.3, 1.0, 0.45)
-    elif pst and show_mag < cur_mag:
-        col = (1.0, 0.35, 0.3)
-    ui.label("%d / %d" % (show_mag, show_mag * wdef.reserve_mags), x + w, y, 13, col, align="right", shadow=False)
-    y += 20
-
-    ui.label("换弹时间", x, y, 13, GREY, shadow=False)
-    cur_rt = pst.reload_time if pst else st.reload_time
-    cur_et = pst.reload_empty_time if pst else st.reload_empty_time
-    txt = ("%.1fs/发" % (pst.shell_time if pst else st.shell_time)) if wdef.shell_reload else ("%.1fs / %.1fs" % (cur_rt, cur_et))
-    ui.label(txt, x + w, y, 13, WHITE, align="right", shadow=False)
-    y += 20
-
-    ui.label("射击模式", x, y, 13, GREY, shadow=False)
+        ui.stat_bar(x, y, w, k, v, v - bv[k][0], txt)
+        y += 40
+    ui.label("弹匣", x, y, 14, GREY, shadow=False)
+    ui.label("%d / %d" % (st.mag_size, st.mag_size * wdef.reserve_mags), x + w, y, 14, WHITE, align="right",
+             shadow=False)
+    y += 22
+    ui.label("换弹", x, y, 14, GREY, shadow=False)
+    txt = ("%.1fs/发" % st.shell_time) if wdef.shell_reload else ("%.1fs / %.1fs" % (st.reload_time, st.reload_empty_time))
+    ui.label(txt, x + w, y, 14, WHITE, align="right", shadow=False)
+    y += 22
+    ui.label("射击模式", x, y, 14, GREY, shadow=False)
     names = {"auto": "全自动", "semi": "半自动", "burst": "%d连发" % wdef.burst_count, "bolt": "手动", "pump": "泵动"}
-    ui.label(" / ".join(names[m] for m in wdef.fire_modes), x + w, y, 13, WHITE, align="right", shadow=False)
-    return y + 20
+    ui.label(" / ".join(names[m] for m in wdef.fire_modes), x + w, y, 14, WHITE, align="right", shadow=False)
+    return y + 22
 
 
 # ════════════════ Plus 配件菜单 ════════════════
@@ -187,26 +166,16 @@ def draw_stats_compact(ui, x, y, w, wdef, atts):
     draw_stats(ui, x, y + 26, w, wdef, atts)
 
 
-# ════════════════ 全新战备部署界面 (直观易用 · 零繁琐) ════════════════
+# ════════════════ 部署界面 (每次重生选择主/副武器) ════════════════
 class LoadoutScreen:
-    """
-    全新编写的战备部署界面:
-    1. 左侧: 清晰的主/副武器切换与类别标签，单机即换枪。
-    2. 中间: 3D 高精战术模型舞台，下方直出 4 个改装槽位，点击即可就地展开配件抽屉，支持即时对比。
-    3. 右侧: 武器性能雷达属性板，悬停配件即时红绿对比。
-    4. 底部: 醒目的巨型部署按钮，支持 空格/回车 极速部署。
-    """
-
     def __init__(self, ui, gun_cache, prefs):
         self.ui = ui
         self.cache = gun_cache
         self.prefs = prefs
         self.t = 0.0
-        self.focus = "primary"        # "primary" | "secondary"
         p = WEAPONS.get(prefs.data.get("primary", "m4a1"))
         self.category = p.category if p else RIFLE
-        self.active_slot = None       # None | "optic" | "muzzle" | "underbarrel" | "magazine"
-        self.hovered_att = None       # 悬停配件用于属性对比
+        self.focus = "primary"
 
     def atts_for(self, wid):
         saved = self.prefs.data.setdefault("atts", {}).get(wid)
@@ -228,206 +197,87 @@ class LoadoutScreen:
         ui = self.ui
         W, H = ui.w, ui.h
         d = self.prefs.data
+        rect(0, 0, W, H, (0.02, 0.03, 0.05), 0.72)
+        rect_grad(0, 0, W, 70, (0, 0, 0), (0, 0, 0), 0.7, 0.0)
+        ui.label("部署", 30, 18, 30, WHITE, bold=True)
+        ui.label("DEPLOY  ·  选择你的武器配置", 110, 30, 14, GREY)
+        ui.label(S.TEAM_NAMES[team], W - 30, 22, 18, FRIEND if team == 0 else ENEMY, align="right", bold=True)
+        if status:
+            ui.label(status, W - 30, 48, 12, GREY, align="right")
         result = None
 
-        # ── 战术深色渐变背景 ──
-        rect(0, 0, W, H, (0.03, 0.04, 0.06), 0.82)
-        rect_grad(0, 0, W, 72, (0.01, 0.02, 0.03), (0.03, 0.04, 0.06), 0.95, 0.75)
-        rect(0, 72, W, 2, ACCENT, 0.35)
-
-        # ── 顶栏: 部署标题与阵营状态 ──
-        ui.label("战备部署", 32, 16, 26, WHITE, bold=True)
-        ui.label("LOADOUT & DEPLOYMENT · 战备配置与直观改装", 155, 26, 12, GREY)
-
-        team_name = S.TEAM_NAMES.get(team, "BLUFOR")
-        team_col = FRIEND if team == 0 else ENEMY
-        ui.label(team_name, W - 32, 18, 18, team_col, align="right", bold=True)
-        if status:
-            ui.label(status, W - 32, 44, 12, GREY, align="right")
-        else:
-            ui.label("准备就绪 · 随时投入交火", W - 32, 44, 12, (0.35, 0.85, 0.5), align="right")
-
-        # ── 当前选中的主/副武器 ID ──
-        prim_id = d.get("primary", "m4a1")
-        sec_id = d.get("secondary", "p320")
-        cur_id = prim_id if self.focus == "primary" else sec_id
-        wdef = WEAPONS[cur_id]
-        cur_atts = self.atts_for(cur_id)
-
-        # ════════════════ 左侧: 武器库选择栏 (W: 320) ════════════════
-        lx, ly = 32, 88
-        lw = 320
-
-        # 主武器 / 副武器 切换大卡片
-        pw_btn = (lw - 8) / 2
-        prim_def = WEAPONS[prim_id]
-        sec_def = WEAPONS[sec_id]
-
-        if ui.button(lx, ly, pw_btn, 48, "主武器", selected=(self.focus == "primary"), size=14, sub=prim_def.name):
-            self.focus = "primary"
-            self.active_slot = None
-            self.category = prim_def.category
-        if ui.button(lx + pw_btn + 8, ly, pw_btn, 48, "副武器", selected=(self.focus == "secondary"), size=14, sub=sec_def.name):
-            self.focus = "secondary"
-            self.active_slot = None
-            self.category = PISTOL
-
-        ly += 56
-
-        # 武器类别筛选器
-        if self.focus == "primary":
-            cat_w = (lw - 10) / 3
-            for i, cat in enumerate(PRIMARY_CATEGORIES):
-                is_sel = cat == self.category
-                if ui.button(lx + i * (cat_w + 5), ly, cat_w, 30, CATEGORY_NAMES[cat], selected=is_sel, size=13):
-                    self.category = cat
-                    self.active_slot = None
-            ly += 38
-            available_weapons = weapons_in(self.category)
-        else:
-            ui.label("副手随身武器 · 手枪系列", lx, ly + 6, 13, ACCENT_DIM, bold=True)
-            ly += 34
-            available_weapons = secondary_weapons()
-
-        # 武器卡片列表
-        card_h = 52
-        for w in available_weapons:
-            is_active = (cur_id == w.id)
-            sub_info = "%s · %s" % (w.caliber, " / ".join(w.fire_modes[:2]))
-            if ui.button(lx, ly, lw, card_h, w.name, selected=is_active, size=15, sub=sub_info, align="left"):
-                if self.focus == "primary":
-                    d["primary"] = w.id
-                else:
-                    d["secondary"] = w.id
+        # ── 左侧: 主武器 ──
+        x, y = 30, 90
+        ui.label("主武器", x, y, 16, ACCENT, bold=True)
+        y += 28
+        tw = 106
+        for i, cat in enumerate(PRIMARY_CATEGORIES):
+            if ui.button(x + i * (tw + 6), y, tw, 32, CATEGORY_NAMES[cat], cat == self.category, size=15):
+                self.category = cat
+        y += 42
+        for wdef in weapons_in(self.category):
+            sel = d.get("primary") == wdef.id
+            if ui.button(x, y, 330, 48, wdef.name, sel, size=16, sub=wdef.caliber, align="left"):
+                d["primary"] = wdef.id
+                self.focus = "primary"
                 self.prefs.save()
-                self.active_slot = None
-            ly += card_h + 6
+            y += 54
+        # 副武器
+        y = max(y + 10, 440)
+        ui.label("副武器  ·  手枪", x, y, 16, ACCENT, bold=True)
+        y += 28
+        for i, wdef in enumerate(secondary_weapons()):
+            sel = d.get("secondary") == wdef.id
+            bx = x + (i % 2) * 168
+            by = y + (i // 2) * 50
+            if ui.button(bx, by, 162, 44, wdef.name, sel, size=14, sub=wdef.caliber):
+                d["secondary"] = wdef.id
+                self.focus = "secondary"
+                self.prefs.save()
 
-        # ════════════════ 中间: 3D 展台与直接配件改装 (W: 530) ════════════════
-        cx = 372
-        cy = 88
-        cw = 530
-        stage_h = 245
-
-        # 3D 武器展台面板
-        ui.panel(cx, cy, cw, stage_h, 0.40)
-        ui.corner_frame(cx, cy, cw, stage_h)
-
-        # 渲染 3D 枪械模型
-        model = self.cache.get(cur_id, cur_atts)
-        draw_gun_preview(model, cx, cy, cw, stage_h, W, H, self.t, spin=True)
+        # ── 中间: 预览 ──
+        fid = d.get(self.focus, "m4a1")
+        wdef = WEAPONS[fid]
+        atts = self.atts_for(fid)
+        px, py, pw, ph = 390, 90, 500, 260
+        if ui.button(px, py, 120, 28, "主武器", self.focus == "primary", size=13):
+            self.focus = "primary"
+        if ui.button(px + 126, py, 120, 28, "副武器", self.focus == "secondary", size=13):
+            self.focus = "secondary"
+        py += 36
+        ui.panel(px, py, pw, ph, 0.35)
+        ui.corner_frame(px, py, pw, ph)
+        model = self.cache.get(fid, atts)
+        draw_gun_preview(model, px, py, pw, ph, W, H, self.t)
         glEnable(GL_BLEND)
-
-        # 展台左上角标签
-        ui.label(wdef.name, cx + 16, cy + 12, 22, WHITE, bold=True)
-        ui.label(CATEGORY_NAMES[wdef.category] + "  ·  " + wdef.caliber, cx + 16, cy + 40, 13, GREY)
-        ui.label(wdef.real, cx + 16, cy + stage_h - 22, 12, (0.7, 0.72, 0.75))
-
-        # ── 4 个直观配件卡片 ──
-        slot_y = cy + stage_h + 16
-        slot_w = (cw - 18) / 4
-
-        ui.label("配件快速改装 (点击槽位展开直选 · 悬停对比属性)", cx, slot_y, 13, ACCENT, bold=True)
-        slot_y += 24
-
+        ui.label(wdef.name, px + 14, py + 10, 22, WHITE, bold=True)
+        ui.label(CATEGORY_NAMES[wdef.category] + "  ·  " + wdef.caliber, px + 14, py + 40, 13, GREY)
+        ui.label(wdef.real, px, py + ph + 10, 13, GREY)
+        # 配件
+        ay = py + ph + 40
+        ui.label("配件 (按 Z 或点击自定义)", px, ay, 14, ACCENT, bold=True)
+        ay += 24
+        sw = (pw - 18) / 4
         for i, slot in enumerate(SLOTS):
-            aid = cur_atts[slot]
-            a = ATTACHMENTS[aid]
-            is_slot_open = (self.active_slot == slot)
-            sx = cx + i * (slot_w + 6)
-            if ui.button(sx, slot_y, slot_w, 54, a.name, selected=is_slot_open, size=13, sub=SLOT_NAMES[slot]):
-                self.active_slot = None if is_slot_open else slot
-                self.hovered_att = None
+            a = ATTACHMENTS[atts[slot]]
+            if ui.button(px + i * (sw + 6), ay, sw, 50, a.name, False, size=14, sub=SLOT_NAMES[slot]):
+                self.open_plus(plus_menu)
+        # ── 右侧: 属性 ──
+        sx = 920
+        ui.panel(sx - 14, 90, W - sx - 16, 420, 0.5)
+        ui.label("武器属性", sx, 102, 16, ACCENT, bold=True)
+        draw_stats(ui, sx, 132, W - sx - 44, wdef, atts)
 
-        # ── 直观展开的配件抽屉 (INLINE TRAY) ──
-        tray_y = slot_y + 62
-        tray_h = H - tray_y - 84
-
-        self.hovered_att = None
-        if self.active_slot is not None:
-            opts = options_for(wdef, self.active_slot)
-            ui.panel(cx, tray_y, cw, tray_h, 0.65)
-            ui.corner_frame(cx, tray_y, cw, tray_h, color=ACCENT_DIM)
-            ui.label("选择 %s (%d 项可用)" % (SLOT_NAMES[self.active_slot], len(opts)), cx + 14, tray_y + 10, 13, ACCENT, bold=True)
-
-            # 关闭抽屉按钮
-            if ui.button(cx + cw - 32, tray_y + 6, 24, 20, "×", size=14):
-                self.active_slot = None
-
-            # 配件选项卡片
-            opt_x = cx + 12
-            opt_y = tray_y + 32
-            opt_w = (cw - 30) / 2
-            opt_h = 42
-
-            for j, opt in enumerate(opts):
-                is_equipped = (cur_atts[self.active_slot] == opt.id)
-                col_idx = j % 2
-                row_idx = j // 2
-                bx = opt_x + col_idx * (opt_w + 6)
-                by = opt_y + row_idx * (opt_h + 6)
-
-                if by + opt_h <= tray_y + tray_h:
-                    if ui.hover(bx, by, opt_w, opt_h):
-                        self.hovered_att = opt.id
-                    sub_text = opt.desc[:22]
-                    if ui.button(bx, by, opt_w, opt_h, opt.name, selected=is_equipped, size=13, sub=sub_text, align="left"):
-                        cur_atts[self.active_slot] = opt.id
-                        self.set_atts(cur_id, cur_atts)
-        else:
-            # 抽屉未展开时展示当前配置概览与操作指南
-            ui.panel(cx, tray_y, cw, tray_h, 0.35)
-            ui.corner_frame(cx, tray_y, cw, tray_h, color=(0.2, 0.3, 0.4))
-            ui.label("战术战备简报", cx + 16, tray_y + 12, 14, ACCENT_DIM, bold=True)
-            tip1 = "· 点击上方 [ 瞄具 / 枪口 / 下挂 / 弹匣 ] 可就地快速选装并实时预览 3D 变化"
-            tip2 = "· 战局中亦可随时按 [ Z ] 键呼出战场快速改装环"
-            tip3 = "· 开镜瞄准自带精确物理倍率缩放与出瞳视场校准"
-            tip4 = "· 选好武器后，按 [ 空格 ] 或 [ 回车 ] 即可直接出击"
-            ui.label(tip1, cx + 16, tray_y + 38, 12, GREY)
-            ui.label(tip2, cx + 16, tray_y + 60, 12, GREY)
-            ui.label(tip3, cx + 16, tray_y + 82, 12, GREY)
-            ui.label(tip4, cx + 16, tray_y + 104, 12, (0.4, 0.85, 0.6))
-
-        # ════════════════ 右侧: 武器属性雷达数据板 (W: 315) ════════════════
-        rx = cx + cw + 20
-        rw = W - rx - 32
-        ry = 88
-        rh = H - ry - 84
-
-        ui.panel(rx, ry, rw, rh, 0.50)
-        ui.corner_frame(rx, ry, rw, rh)
-        ui.label("武器性能参数", rx + 14, ry + 12, 15, ACCENT, bold=True)
-
-        # 预览对比配置
-        prev_atts = dict(cur_atts)
-        if self.hovered_att:
-            a = ATTACHMENTS[self.hovered_att]
-            prev_atts[a.slot] = a.id
-        draw_stats(ui, rx + 14, ry + 40, rw - 28, wdef, cur_atts, prev_atts if self.hovered_att else None)
-
-        # ════════════════ 底栏: 部署操作与主菜单 ════════════════
-        by = H - 72
-
-        # 返回主菜单
-        if ui.button(32, by, 150, 48, "返回主菜单", size=14, sub="ESC"):
-            result = "menu"
-
-        # 中间配置简述
-        prim_optic = ATTACHMENTS[self.atts_for(prim_id)["optic"]].name
-        sec_optic = ATTACHMENTS[self.atts_for(sec_id)["optic"]].name
-        summary = "已选战备:  %s (%s)  +  %s (%s)" % (prim_def.name, prim_optic, sec_def.name, sec_optic)
-        ui.label(summary, cx, by + 16, 14, WHITE, bold=True)
-
-        # 醒目的巨型部署按钮
+        # ── 底部: 部署按钮 ──
+        prim, sec = WEAPONS[d.get("primary", "m4a1")], WEAPONS[d.get("secondary", "p320")]
+        ui.label("当前配置:  %s  +  %s" % (prim.name, sec.name), px, H - 60, 15, WHITE)
         ready = respawn_t <= 0
-        deploy_w = 280
-        deploy_x = W - deploy_w - 32
-        deploy_label = "确认部署" if ready else "部署冷却"
-        deploy_sub = "ENTER / 空格 立即出发" if ready else "等待重生 %.1fs" % respawn_t
-        if ui.button(deploy_x, by, deploy_w, 52, deploy_label, selected=ready, enabled=ready,
-                     size=20, sub=deploy_sub, accent=ACCENT if ready else (0.4, 0.4, 0.4)):
+        label = "部署" if ready else "部署  %.1f" % respawn_t
+        if ui.button(W - 350, H - 90, 320, 60, label, selected=ready, enabled=ready, size=24,
+                     sub="ENTER / 空格" if ready else "重生冷却中"):
             result = "deploy"
-
+        if ui.button(30, H - 70, 150, 40, "返回主菜单", size=14):
+            result = "menu"
         return result
 
     def open_plus(self, plus_menu):

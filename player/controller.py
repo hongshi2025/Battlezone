@@ -232,15 +232,11 @@ def simulate_player(p: PlayerState, cmd: InputCommand, col, want_shots=True):
 
     # ═════════════ 冲刺判定 ═════════════
     firing = bool(btn & Btn.FIRE) and w is not None and w.ammo > 0
-    want_sprint = (bool(btn & Btn.SPRINT) and mf > 0.35 and not (btn & Btn.ADS) and not firing
-                   and p.move != M_SLIDE)
-    if want_sprint and p.stance in (CROUCH, PRONE) and p.on_ground:
-        if _set_stance(p, col, STAND):
-            p.prone_t = 0.0
-        else:
+    want_sprint = (btn & Btn.SPRINT and mf > 0.35 and not (btn & Btn.ADS) and not firing
+                   and p.stance != PRONE and p.move != M_SLIDE)
+    if want_sprint and p.stance == CROUCH and p.on_ground:
+        if not _set_stance(p, col, STAND):
             want_sprint = False
-    elif p.stance == PRONE:
-        want_sprint = False
 
     # ═════════════ 滑铲进行中 ═════════════
     if p.move == M_SLIDE:
@@ -302,7 +298,7 @@ def simulate_player(p: PlayerState, cmd: InputCommand, col, want_shots=True):
             p.vel[0] += dvx
             p.vel[2] += dvz
         if p.on_ground:
-            if want_sprint and (p.hspeed() > S.WALK_SPEED * 0.45 or p.move == M_SPRINT or mlen > 0.5):
+            if want_sprint and p.hspeed() > S.WALK_SPEED * 0.8:
                 p.move = M_SPRINT
             elif p.hspeed() > 0.3:
                 p.move = M_WALK

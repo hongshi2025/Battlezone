@@ -316,8 +316,7 @@ class WorldRenderer:
             dy = (p.yaw - e["yaw"] + math.pi) % (2 * math.pi) - math.pi
             e["yaw"] += dy * min(1.0, dt * 15)
             e["eye"] += (p.eye_h - e["eye"]) * min(1.0, dt * 12)
-            stride_len = 2.4 if p.move == M_SPRINT else 1.8
-            e["phase"] += (p.hspeed() / stride_len) * (2.0 * math.pi) * dt
+            e["phase"] += p.hspeed() * dt * 1.6
             e["alive"] = p.alive
             e["fire_t"] = max(0.0, e["fire_t"] - dt)
             e["spotted"] = max(0.0, e["spotted"] - dt)
@@ -516,8 +515,8 @@ def draw_soldier(p, e, gun_cache):
     glPushMatrix()
     glTranslatef(x, y, z)
     glRotatef(-math.degrees(e["yaw"]), 0, 1, 0)
-    ph = e["phase"]
-    speed = min(1.3, p.hspeed() / S.WALK_SPEED)
+    ph = e["phase"] * math.pi
+    speed = min(1.5, p.hspeed() / S.WALK_SPEED)
     sprint = p.move == M_SPRINT
     w = p.weapon
     pitch = p.pitch + p.recoil_p
@@ -547,8 +546,8 @@ def draw_soldier(p, e, gun_cache):
     hip_y = 0.95 - 0.38 * min(1.0, crouch)
     if slide:
         hip_y = 0.35
-    lean_fwd = 8 * crouch + (16 if sprint else 0) - (35 if slide else 0)
-    swing = (0.32 if sprint else 0.22) * speed if p.on_ground and not slide else 0.0
+    lean_fwd = 8 * crouch + (18 if sprint else 0) - (35 if slide else 0)
+    swing = (0.55 if sprint else 0.35) * speed if p.on_ground and not slide else 0.0
     if not p.on_ground and not slide:
         swing = 0.0
     # 腿
@@ -563,7 +562,7 @@ def draw_soldier(p, e, gun_cache):
             knee_f = 1
         else:
             fz = math.sin(ph + (0 if s > 0 else math.pi)) * swing
-            lift = max(0.0, math.sin(ph + (0 if s > 0 else math.pi))) * (0.08 if sprint else 0.05) * speed
+            lift = max(0.0, math.cos(ph + (0 if s > 0 else math.pi))) * 0.15 * speed
             foot = (s * 0.12, lift + (0.25 if not p.on_ground else 0.0), fz)
             knee_f = 1
         _leg(hip, foot, knee_f, U)

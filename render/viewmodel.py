@@ -151,9 +151,9 @@ class ViewModel:
         hs = p.hspeed() if p.on_ground else 0.0
         if p.move == M_SLIDE:
             hs = 0.0
-        step_len = 2.4 if p.move == M_SPRINT else (1.4 if p.stance == CROUCH else 1.8)
-        self.bob_phase += (hs / step_len) * (2.0 * math.pi) * dt
-        amp_t = clamp(hs / S.WALK_SPEED, 0.0, 1.4)
+        freq = 1.9 if p.stance != PRONE else 1.2
+        self.bob_phase += hs * dt * freq
+        amp_t = clamp(hs / S.WALK_SPEED, 0.0, 1.7)
         self.bob_amp += (amp_t - self.bob_amp) * min(1.0, 8 * dt)
         # ── 鼠标惯性 ──
         tx = clamp(-mouse_dx * 0.00018, -0.035, 0.035)
@@ -362,28 +362,26 @@ class ViewModel:
         pos[0] -= 0.012 * c
         pos[1] += 0.008 * c
         rot[2] += 5 * c
-        # ── 冲刺: 战术冲刺姿态 (参考 TACZ / MW，自然沉稳有力) ──
+        # ── 冲刺: 枪口斜向下压在胸前 (战术冲刺姿态) ──
         s = W["sprint"] * na
-        ph = self.bob_phase
+        ph = self.bob_phase * math.pi
         if pistol:
-            pos[0] += -0.035 * s
-            pos[1] += -0.045 * s
-            pos[2] += 0.05 * s
-            rot[0] += -28 * s
-            rot[2] += -10 * s
+            pos[0] += -0.04 * s
+            pos[1] += -0.05 * s
+            pos[2] += 0.06 * s
+            rot[0] += -32 * s
+            rot[2] += -12 * s
         else:
-            pos[0] += -0.07 * s
-            pos[1] += -0.04 * s
-            pos[2] += 0.05 * s
-            rot[0] += -10 * s
-            rot[1] += 36 * s
-            rot[2] += -18 * s
-        # 节奏性呼吸与奔跑摆动 (平滑稳健)
-        pos[0] += math.sin(ph) * 0.012 * s
-        pos[1] += math.sin(2 * ph) * 0.008 * s
-        rot[2] += math.sin(ph) * 2.8 * s
-        rot[1] += math.cos(ph) * 1.6 * s
-        rot[0] += math.sin(2 * ph) * 1.2 * s
+            pos[0] += -0.08 * s
+            pos[1] += -0.05 * s
+            pos[2] += 0.06 * s
+            rot[0] += -12 * s
+            rot[1] += 40 * s
+            rot[2] += -22 * s
+        pos[0] += math.sin(ph) * 0.028 * s
+        pos[1] += -abs(math.cos(ph)) * 0.024 * s
+        rot[2] += math.sin(ph) * 6 * s
+        rot[1] += math.cos(ph) * 3 * s
         # ── 滑铲: 枪身侧倾, 手臂稳住 ──
         sl = W["slide"] * (1 - e * 0.6)
         pos[0] += -0.035 * sl
@@ -395,7 +393,7 @@ class ViewModel:
         pr = W["prone"] * na
         pos[1] += -0.006 * pr
         cr = W["crawl"]
-        cph = self.bob_phase * 0.8
+        cph = self.bob_phase * math.pi * 0.8
         pos[0] += 0.02 * cr + math.sin(cph) * 0.035 * cr
         pos[1] += -0.08 * cr + abs(math.sin(cph)) * 0.02 * cr
         pos[2] += 0.05 * cr
@@ -415,12 +413,11 @@ class ViewModel:
         vy = clamp(p.vel[1], -8, 8)
         pos[1] += -vy * 0.004 * air * (1 - 0.6 * e)
         rot[0] += vy * 0.7 * air * (1 - 0.6 * e)
-        # ── 行走摆动 (8 字形，平滑自然) ──
-        bob = self.bob_amp * (1 - s) * (1 - 0.94 * e) * (1 - cr)
-        pos[0] += math.sin(ph) * 0.007 * bob
-        pos[1] += math.sin(2 * ph) * 0.004 * bob
-        rot[2] += math.sin(ph) * 0.8 * bob
-        rot[1] += math.cos(ph) * 0.5 * bob
+        # ── 行走摆动 (8 字形) ──
+        bob = self.bob_amp * (1 - s) * (1 - 0.88 * e) * (1 - cr)
+        pos[0] += math.sin(ph) * 0.011 * bob
+        pos[1] += -abs(math.cos(ph)) * 0.01 * bob
+        rot[2] += math.sin(ph) * 1.2 * bob
         # ── 呼吸 ──
         br = 1 - 0.75 * e
         pos[1] += math.sin(self.t * 1.7) * 0.0016 * br
@@ -463,10 +460,7 @@ class ViewModel:
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        st = w.stats if w else None
-        zoom_val = st.zoom if st else 1.0
-        target_vm_fov = S.VIEWMODEL_FOV * (0.76 if zoom_val > 3.5 else (0.82 if zoom_val > 1.5 else 0.86))
-        fov = lerp(S.VIEWMODEL_FOV, target_vm_fov, smoothstep(self.visual_ads))
+        fov = lerp(S.VIEWMODEL_FOV, S.VIEWMODEL_FOV * 0.82, smoothstep(self.visual_ads))
         perspective(fov, width / float(height), 0.01, 10.0)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
